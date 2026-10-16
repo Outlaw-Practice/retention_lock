@@ -80,6 +80,12 @@ function fixture(action) {
             const initialRequests = purgeRequests;
             phase = 'page-' + mode;
             await page.goto(base + '/settings/admin/server');
+            await page.locator('#retention-owner').waitFor({ state: 'visible' });
+            const welcome = page.getByRole('dialog');
+            if (await welcome.count()) {
+                await welcome.getByRole('button', { name: /Close/i }).first().click();
+                await welcome.waitFor({ state: 'hidden' });
+            }
             await page.locator('#retention-owner').fill(owner);
             await page.locator('#retention-list-form button').click();
             await page.locator('#retention-purge-form').waitFor({ state: 'visible' });
