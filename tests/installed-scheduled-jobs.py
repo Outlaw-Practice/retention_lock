@@ -1,12 +1,19 @@
 """Bounded installed-job qualification; no source substitution or host-clock change."""
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parents[3] / 'qualification/retention-release-dc90f8edffe87507'
-COMPOSE = HERE / 'http-copy/compose.yml'
-SOURCE = Path('/Users/john/projects/outlaw/deploy/nextcloud/retention')
+ARTIFACT = Path(os.environ['NEXTCLOUD_ARTIFACT'])
+COMPOSE = Path(os.environ['NEXTCLOUD_COMPOSE_FILE'])
+SOURCE = Path(os.environ['NEXTCLOUD_PLATFORM_SOURCE']) / 'deploy/nextcloud/retention'
+record = json.loads((ARTIFACT / 'build-record.json').read_text())
+if not re.fullmatch(r'[a-f0-9]{64}', record['artifact_sha256']):
+    raise SystemExit('Invalid selected artifact digest')
+BUILD = record['inputs']['release']['version'] + '-outlaw.' + record['artifact_sha256'][:16]
+if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z]+[0-9]+)?-outlaw\.[a-f0-9]{16}', BUILD):
+    raise SystemExit('Invalid selected build identifier')
 BOOT = r'''
     $fixtureDelete = static function ($owner): bool {
         $system = OCP\Server::get(OC\SystemConfig::class);
@@ -37,7 +44,7 @@ BOOT = r'''
     foreach ($jobClasses as $class) {
         if (!$jobs->has($class, null)) { throw new RuntimeException('Scheduled job missing'); }
         $path = (new ReflectionClass($class))->getFileName();
-        if (!str_starts_with($path, '/opt/nextcloud/releases/35.0.2-outlaw.dc90f8edffe87507/')) {
+        if (!str_starts_with($path, '/opt/nextcloud/releases/__EXPECTED_RELEASE__/')) {
             throw new RuntimeException('Job is not loaded from assembled release');
         }
     }
@@ -45,6 +52,7 @@ BOOT = r'''
         (new ReflectionMethod($job, 'run'))->invoke($job, null);
     };
 '''
+BOOT = BOOT.replace('__EXPECTED_RELEASE__', BUILD)
 CLEANUP = r'''
         // Allow deletion only for disposable fixture cleanup in this process.
         $system = OCP\Server::get(OC\SystemConfig::class);
@@ -108,7 +116,7 @@ for kind in ('personal', 'team'):
         program = program.replace("    $phase = 'before-cutoff';", setup + "    $phase = 'before-cutoff';")
         program = program.replace('$trash->expire($expiration);', '$invokeJob($job);')
         program = program.replace('        if ($folderId !== null) {', CLEANUP + '        if ($folderId !== null) {')
-    process = subprocess.run(['docker', '--context', 'desktop-linux', 'compose', '-f', str(COMPOSE),
+    process = subprocess.run(['docker', '--context', os.environ.get('DOCKER_CONTEXT', 'desktop-linux'), 'compose', '-f', str(COMPOSE),
                               'exec', '-T', '--user', 'www-data', 'nextcloud', 'php'],
                              input=program, text=True, capture_output=True, timeout=180)
     try:
@@ -124,9 +132,9 @@ for kind in ('personal', 'team'):
                   'declaration_error': 'Declaration of' in process.stdout + process.stderr}
     results[kind] = result
 report = {'status': 'passed' if len(results) == 2 and all(r['status'] == 'passed' for r in results.values()) else 'failed',
-          'build': '35.0.2-outlaw.dc90f8edffe87507',
+          'build': BUILD,
           'method': 'Actual installed registered job run methods; personal enumeration scoped to disposable user; Teamfolders requires otherwise empty copy; process-local clock; fixture cleanup only process-local purge override',
           'results': results}
-(HERE / 'scheduled-jobs-result.json').write_text(json.dumps(report, indent=2) + '\n')
+(ARTIFACT.parent / 'scheduled-jobs-result.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps(report))
 raise SystemExit(0 if report['status'] == 'passed' else 1)
