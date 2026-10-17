@@ -105,6 +105,14 @@ and exactly one audit entry, and remove their disposable fixtures.
 
 ## Installed candidate qualification
 
+The installed scheduled-job harness now binds to the selected build record,
+instead of one historical release. Supply `NEXTCLOUD_ARTIFACT` (verified bundle),
+`NEXTCLOUD_COMPOSE_FILE` (disposable local stack), and `NEXTCLOUD_PLATFORM_SOURCE`
+(matching platform source checkout) through the environment, then run
+`python3 tests/installed-scheduled-jobs.py`. It records results beside the
+artifact, checks job code comes from that exact release directory, and preserves
+the existing process-local clock, scoped enumeration and cleanup protections.
+
 `tests/assemble-candidate.py --output /absolute/new-directory` snapshots the
 server changes into an isolated fixture commit, checks the Teamfolders patch
 base against the previously verified archive, packages the app and commits
